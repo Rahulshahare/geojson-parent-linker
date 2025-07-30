@@ -2,9 +2,9 @@ const fs = require('fs');
 const readline = require('readline');
 const turf = require('@turf/turf');
 
-const parentFile = 'geoBoundaries-IND-ADM0_simplified.geojson';
-const childFile = 'geoBoundaries-IND-ADM1_simplified.geojson';
-const outputFile = 'adm1_with_parent_streamed.geojson';
+const parentFile = 'geoBoundaries-IND-ADM1_simplified.geojson';
+const childFile = 'geoBoundaries-IND-ADM2_simplified.geojson';
+const outputFile = 'adm2_with_parent_streamed.geojson';
 
 if (!fs.existsSync(parentFile) || !fs.existsSync(childFile)) {
   console.error('Error: Input files missing:', { parentFile, childFile });
