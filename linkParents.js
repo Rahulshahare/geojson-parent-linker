@@ -2,9 +2,9 @@ const fs = require('fs');
 const turf = require('@turf/turf');
 
 // ==== CONFIGURATION ====
-const parentFile = 'geoBoundaries-IND-ADM0_simplified.geojson';  // or your parent file
-const childFile = 'geoBoundaries-IND-ADM1_simplified.geojson';   // or your child file
-const outputFile = 'adm1_with_parent_and_bbox.json';
+const parentFile = 'geoBoundaries-IND-ADM1_simplified.geojson';  // or your parent file
+const childFile = 'geoBoundaries-IND-ADM2_simplified.geojson';   // or your child file
+const outputFile = 'adm2_with_parent_and_bbox.json';
 
 // === Helper: flatten MultiPolygon/Polygon ===
 function getPolygons(feature) {
@@ -70,5 +70,8 @@ child.features.forEach(childFeature => {
 console.log(`Matched: ${matched} of ${child.features.length} features.`);
 
 // === Write Output ===
-fs.writeFileSync(outputFile, JSON.stringify(child, null, 2), 'utf-8');
+//fs.writeFileSync(outputFile, JSON.stringify(child, null, 2), 'utf-8');
+//Minifying the output
+fs.writeFileSync(outputFile, JSON.stringify(child), 'utf-8');
+
 console.log(`Done! Output written to ${outputFile}`);
