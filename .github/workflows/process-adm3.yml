@@ -1,0 +1,39 @@
+name: Process ADM3 Features
+
+on:
+  workflow_dispatch: # Manual trigger, as in your previous workflow
+
+jobs:
+  process-adm3:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Matching your previous setup
+
+      - name: Debug directory contents
+        run: ls -la
+
+      - name: Check input file sizes
+        run: ls -lh geoBoundaries-IND-ADM1_simplified.geojson geoBoundaries-IND-ADM3_simplified.geojson
+
+      - name: Install dependencies
+        run: npm install @turf/turf rbush
+
+      - name: Run ADM3 processing script
+        run: node streamLinkParent_adm3.mjs
+
+      - name: Upload GeoJSON output
+        uses: actions/upload-artifact@v4
+        with:
+          name: adm3-output
+          path: adm3_with_parent_streamed.geojson
+          if-no-files-found: warn
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
