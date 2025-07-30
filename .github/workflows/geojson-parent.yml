@@ -18,7 +18,7 @@ jobs:
         run: node linkParents.js
 
       - name: Upload GeoJSON and NDJSON
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: geojson-ndjson-output
           path: |
