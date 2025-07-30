@@ -23,4 +23,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: geojson-output
-          path: adm1_with_parent_streamed.geojson
+          path: adm2_with_parent_streamed.geojson
+          if-no-files-found: warn
+          compression-level: 6
+          overwrite: false
+          include-hidden-files: false
