@@ -1,0 +1,25 @@
+name: GeoJSON Parent and NDJSON
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install node-fetch@2 @turf/turf
+
+      - name: Run parent linker with NDJSON output
+        run: node linkParents.js
+
+      - name: Upload GeoJSON and NDJSON
+        uses: actions/upload-artifact@v3
+        with:
+          name: geojson-ndjson-output
+          path: |
+            adm1_with_parent.*

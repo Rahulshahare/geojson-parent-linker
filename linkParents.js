@@ -1,77 +1,50 @@
 const fs = require('fs');
+const fetch = require('node-fetch');
 const turf = require('@turf/turf');
 
-// ==== CONFIGURATION ====
-const parentFile = 'geoBoundaries-IND-ADM1_simplified.geojson';  // or your parent file
-const childFile = 'geoBoundaries-IND-ADM2_simplified.geojson';   // or your child file
-const outputFile = 'adm2_with_parent_and_bbox.json';
+// URLs (replace as needed)
+const ADM0_URL = 'https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/IND/ADM0/geoBoundaries-IND-ADM0.geojson';
+const ADM1_URL = 'https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/IND/ADM1/geoBoundaries-IND-ADM1.geojson';
 
-// === Helper: flatten MultiPolygon/Polygon ===
-function getPolygons(feature) {
-  if (feature.geometry.type === 'Polygon') {
-    return [feature];
-  } else if (feature.geometry.type === 'MultiPolygon') {
-    return feature.geometry.coordinates.map(coords => ({
-      type: 'Feature',
-      properties: feature.properties,
-      geometry: {
-        type: 'Polygon',
-        coordinates: coords,
-      },
-    }));
-  }
-  return [];
+// Download helper
+async function download(url, outfile) {
+  const res = await fetch(url);
+  const buffer = await res.buffer();
+  fs.writeFileSync(outfile, buffer);
+  console.log(`Downloaded ${outfile}`);
 }
 
-// === Main logic ===
-const parent = JSON.parse(fs.readFileSync(parentFile));
-const child = JSON.parse(fs.readFileSync(childFile));
+(async () => {
+  await download(ADM0_URL, 'adm0.geojson');
+  await download(ADM1_URL, 'adm1.geojson');
 
-let matched = 0;
+  const parent = JSON.parse(fs.readFileSync('adm0.geojson'));
+  const child = JSON.parse(fs.readFileSync('adm1.geojson'));
 
-child.features.forEach(childFeature => {
-  // Assign bbox
-  childFeature.bbox = turf.bbox(childFeature);  // [minX, minY, maxX, maxY]
+  // Output NDJSON file
+  const ndjsonOut = fs.createWriteStream('adm1_with_parent.ndjson');
+  const outputFeatures = [];
 
-  let foundParent = false;
-  const childPolygons = getPolygons(childFeature);
+  child.features.forEach(childFeature => {
+    childFeature.bbox = turf.bbox(childFeature);
 
-  for (const parentFeature of parent.features) {
-    const parentPolygons = getPolygons(parentFeature);
-    for (const polyChild of childPolygons) {
-      for (const polyParent of parentPolygons) {
-        try {
-          if (
-            turf.booleanWithin(polyChild, polyParent) ||
-            turf.booleanOverlap(polyChild, polyParent) ||
-            turf.booleanIntersects(polyChild, polyParent)
-          ) {
-            childFeature.properties.parent_id = parentFeature.properties.shapeID || parentFeature.id;
-            childFeature.properties.parent_name = parentFeature.properties.shapeName || parentFeature.properties.shapename;
-            matched++;
-            foundParent = true;
-            break;
-          }
-        } catch (e) {
-          // Geometry quirks sometimes trigger errors—safe to ignore
-        }
-      }
-      if (foundParent) break;
-    }
-    if (foundParent) break;
-  }
-  if (!foundParent) {
-    childFeature.properties.parent_id = null;
-    childFeature.properties.parent_name = null;
-    console.warn('No parent for:', childFeature.properties.shapeName || childFeature.properties.shapename);
-  }
-});
+    // Only one country polygon, so direct match:
+    childFeature.properties.parent_id = parent.features[0].properties.shapeID || parent.features[0].id;
+    childFeature.properties.parent_name = parent.features[0].properties.shapeName || parent.features[0].properties.shapename;
 
-console.log(`Matched: ${matched} of ${child.features.length} features.`);
+    // Save enriched feature for "full" GeoJSON output
+    outputFeatures.push(childFeature);
 
-// === Write Output ===
-//fs.writeFileSync(outputFile, JSON.stringify(child, null, 2), 'utf-8');
-//Minifying the output
-fs.writeFileSync(outputFile, JSON.stringify(child), 'utf-8');
+    // Also output as NDJSON line
+    ndjsonOut.write(JSON.stringify(childFeature) + '\n');
+  });
 
-console.log(`Done! Output written to ${outputFile}`);
+  ndjsonOut.end();
+  fs.writeFileSync('adm1_with_parent.geojson',
+    JSON.stringify({
+      type: "FeatureCollection",
+      features: outputFeatures
+    })
+  );
+  console.log('Done. Both NDJSON and GeoJSON outputs written.');
+})();
