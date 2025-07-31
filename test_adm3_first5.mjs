@@ -32,17 +32,20 @@ try {
   // Group ADM2 by parent_name (state), normalizing case
   const adm2ByState = new Map();
   adm2Data.features.forEach((feature, index) => {
-    const stateName = feature.properties.parent_name.toLowerCase().normalize('NFKD').replace(/[^\w]/g, '');
-    if (!adm2ByState.has(stateName)) adm2ByState.set(stateName, []);
-    adm2ByState.get(stateName).push({ index, feature });
+    if (feature.properties && feature.properties.parent_name) {
+      const stateName = feature.properties.parent_name.toLowerCase().normalize('NFKD').replace(/[^\w]/g, '');
+      if (!adm2ByState.has(stateName)) adm2ByState.set(stateName, []);
+      adm2ByState.get(stateName).push({ index, feature });
+    }
   });
 
   function getPolygons(feature) {
+    if (!feature || !feature.geometry) return [];
     if (feature.geometry.type === 'Polygon') return [feature];
     if (feature.geometry.type === 'MultiPolygon') {
       return feature.geometry.coordinates.map(coords => ({
         type: 'Feature',
-        properties: feature.properties,
+        properties: feature.properties || {},
         geometry: { type: 'Polygon', coordinates: coords }
       }));
     }
@@ -50,6 +53,12 @@ try {
   }
 
   function processFeature(childFeature, index) {
+    // Ensure feature has required structure
+    if (!childFeature || !childFeature.properties || !childFeature.geometry) {
+      console.warn(`Invalid feature structure at index ${index + 1}`);
+      return;
+    }
+
     let box;
     try { 
       box = bbox(childFeature); 
@@ -59,6 +68,11 @@ try {
     }
 
     const childPolygons = getPolygons(childFeature);
+    if (childPolygons.length === 0) {
+      console.warn(`No valid polygons for feature ${index + 1}`);
+      return;
+    }
+
     let matchedState = null;
 
     // Step 1: Filter by ADM1
@@ -68,6 +82,8 @@ try {
 
     for (const adm1Candidate of adm1Candidates) {
       const adm1Feature = adm1Data.features[adm1Candidate.index];
+      if (!adm1Feature || !adm1Feature.properties) continue;
+
       for (const polyChild of childPolygons) {
         for (const polyAdm1 of getPolygons(adm1Feature)) {
           try {
@@ -94,8 +110,11 @@ try {
       const normalizedState = matchedState.toLowerCase().normalize('NFKD').replace(/[^\w]/g, '');
       const adm2Candidates = adm2ByState.get(normalizedState) || [];
       console.log(`Debug: Checking ${adm2Candidates.length} ADM2 candidates for ${matchedState}`);
+      
       for (const adm2Candidate of adm2Candidates) {
         const adm2Feature = adm2Candidate.feature;
+        if (!adm2Feature || !adm2Feature.properties) continue;
+
         for (const polyChild of childPolygons) {
           for (const polyAdm2 of getPolygons(adm2Feature)) {
             try {
@@ -105,8 +124,8 @@ try {
                 booleanIntersects(polyChild, polyAdm2)
               ) {
                 if (!foundParent) { // Take first match
-                  childFeature.properties.parent_id = adm2Feature.properties.shapeID;
-                  childFeature.properties.parent_name = adm2Feature.properties.shapeName;
+                  childFeature.properties.parent_id = adm2Feature.properties.shapeID || null;
+                  childFeature.properties.parent_name = adm2Feature.properties.shapeName || null;
                   console.log(`  Matched to ADM2: ${adm2Feature.properties.shapeName} (ID: ${adm2Feature.properties.shapeID})`);
                   console.log(`  Final parent_id: ${adm2Feature.properties.shapeID}, parent_name: ${adm2Feature.properties.shapeName}`);
                   foundParent = true;
@@ -122,6 +141,7 @@ try {
         }
         if (foundParent) break;
       }
+      
       if (!foundParent) {
         childFeature.properties.parent_name = matchedState;
         childFeature.properties.state_name = matchedState;
@@ -136,10 +156,23 @@ try {
   console.log('Testing first 10 ADM3 features...');
   const first10Features = adm3Data.features.slice(0, 10);
   
-  // Calculate overall bounding box for the 10 features
+  // Validate features before processing
+  const validFeatures = first10Features.filter((feature, index) => {
+    if (!feature || !feature.properties || !feature.geometry) {
+      console.warn(`Skipping invalid feature at index ${index + 1}`);
+      return false;
+    }
+    return true;
+  });
+
+  if (validFeatures.length === 0) {
+    throw new Error('No valid features found in the first 10 ADM3 features');
+  }
+
+  // Calculate overall bounding box for the valid features
   let overallBbox = [Infinity, Infinity, -Infinity, -Infinity];
   
-  first10Features.forEach((feature, index) => {
+  validFeatures.forEach((feature, index) => {
     processFeature(feature, index);
     
     // Update overall bounding box
@@ -154,31 +187,52 @@ try {
     }
   });
 
-  // Create output with processed features
-  const outputFeatures = first10Features.map(f => ({
+  // Create output with processed features - ensure all required properties exist
+  const outputFeatures = validFeatures.map(f => ({
     type: 'Feature',
     properties: {
-      shapeID: f.properties.shapeID,
-      shapeName: f.properties.shapeName,
+      shapeID: f.properties.shapeID || null,
+      shapeName: f.properties.shapeName || null,
       parent_id: f.properties.parent_id || null,
       parent_name: f.properties.parent_name || null,
       state_name: f.properties.state_name || null,
       parent_state: f.properties.parent_state || null
     },
-    geometry: f.geometry
+    geometry: f.geometry || null
   }));
 
-  // Write output to file with bounding box
+  // Validate bounding box before including it
+  const validBbox = overallBbox.every(coord => isFinite(coord));
+  
+  // Write output to file with proper structure
   const outputData = {
     type: "FeatureCollection",
-    features: outputFeatures,
-    bbox: overallBbox
+    features: outputFeatures
   };
 
-  fs.writeFileSync('output.geojson', JSON.stringify(outputData, null, 2));
-  console.log('Test completed for first 10 ADM3 features');
-  console.log('Overall bbox:', overallBbox);
-  console.log('Output written to output.geojson');
+  // Only add bbox if it's valid
+  if (validBbox) {
+    outputData.bbox = overallBbox;
+  }
+
+  // Write with error handling
+  try {
+    fs.writeFileSync('output.geojson', JSON.stringify(outputData, null, 2));
+    console.log('Test completed for first 10 ADM3 features');
+    if (validBbox) {
+      console.log('Overall bbox:', overallBbox);
+    }
+    console.log('Output written to output.geojson');
+    
+    // Validate the written file
+    const testRead = JSON.parse(fs.readFileSync('output.geojson', 'utf8'));
+    console.log('JSON validation successful - file is valid');
+    console.log(`Features written: ${testRead.features.length}`);
+    
+  } catch (writeError) {
+    console.error('Error writing or validating output file:', writeError.message);
+    throw writeError;
+  }
 
 } catch (error) {
   console.error(`Fatal error: ${error.message}`);
